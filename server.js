@@ -6,14 +6,19 @@ const multer = require('multer');
 const { Server } = require('socket.io');
 
 const store = require('./src/store');
+const auth = require('./src/auth');
+const telemetry = require('./src/telemetry');
+const google = require('./src/google');
+const firebase = require('./src/firebase');
+const paths = require('./src/paths');
+const { config } = require('./src/config');
 const wa = require('./src/whatsapp');
 const campaign = require('./src/campaign');
 const contactsLib = require('./src/contacts');
 const { render, usedVariables } = require('./src/template');
 
-const PORT = process.env.PORT || 3000;
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
-fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const UPLOAD_DIR = paths.UPLOAD_DIR;
+paths.ensureDirs();
 
 const app = express();
 const server = http.createServer(app);
@@ -48,6 +53,12 @@ campaign.on('log', pushLog);
 
 // ---------------------------------------------------------------- sockets
 
+io.use((socket, next) => {
+  const token = socket.handshake.auth && socket.handshake.auth.token;
+  if (!token || !auth.verify(token)) return next(new Error('Not signed in.'));
+  next();
+});
+
 io.on('connection', (socket) => {
   socket.emit('wa:status', wa.status());
   socket.emit('campaign:progress', campaign.snapshot());
@@ -62,6 +73,185 @@ function ok(res, data) {
 function fail(res, err, code = 400) {
   res.status(code).json({ ok: false, error: err.message || String(err) });
 }
+
+// ---------------------------------------------------------------- auth
+
+/** Everything under /api needs a session, except the auth endpoints themselves. */
+app.use('/api', auth.middleware);
+
+app.get('/api/auth/state', (req, res) =>
+  ok(res, {
+    mode: auth.mode(),
+    registered: auth.isRegistered(),
+    account: auth.publicAccount(),
+    googleEnabled: google.isConfigured(),
+    isAdmin: isAdminAccount(),
+  })
+);
+
+/** Let a returning user back in from the saved session, without a password. */
+app.post('/api/auth/restore', async (req, res) => {
+  try {
+    const result = await auth.restore();
+    if (!result) return res.status(401).json({ ok: false, error: 'No saved session.', authRequired: true });
+    ok(res, result);
+  } catch (err) {
+    fail(res, err, 401);
+  }
+});
+
+app.post('/api/auth/reset', async (req, res) => {
+  try {
+    await auth.sendPasswordReset(req.body && req.body.email);
+    ok(res, {});
+  } catch (err) {
+    fail(res, err);
+  }
+});
+
+/**
+ * The dashboard only exists in firebase mode - in local mode there is no shared data
+ * to read, so the tab must not appear at all, even for the admin's own email.
+ */
+function isAdminAccount() {
+  if (auth.mode() !== 'firebase') return false;
+  const account = auth.publicAccount();
+  return !!(
+    account &&
+    account.email &&
+    account.email === String(config.adminEmail).trim().toLowerCase()
+  );
+}
+
+app.post('/api/auth/signup', async (req, res) => {
+  try {
+    ok(res, await auth.signup(req.body || {}));
+  } catch (err) {
+    fail(res, err);
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    ok(res, await auth.login(req.body || {}));
+  } catch (err) {
+    fail(res, err, 401);
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const header = req.get('authorization') || '';
+  auth.signOut(header.startsWith('Bearer ') ? header.slice(7) : null);
+  ok(res, {});
+});
+
+app.post('/api/auth/password', async (req, res) => {
+  try {
+    await auth.changePassword(req.body || {});
+    ok(res, {});
+  } catch (err) {
+    fail(res, err);
+  }
+});
+
+/** Google sign-in: hand the browser a consent URL that redirects back to us. */
+app.get('/api/auth/google/start', (req, res) => {
+  try {
+    const redirectUri = `http://localhost:${activePort}/api/auth/google/callback`;
+    const { url } = google.buildAuthUrl(redirectUri);
+    res.redirect(url);
+  } catch (err) {
+    res.status(400).send(errorPage(err.message));
+  }
+});
+
+app.get('/api/auth/google/callback', async (req, res) => {
+  try {
+    if (req.query.error) throw new Error(`Google returned: ${req.query.error}`);
+    const redirectUri = `http://localhost:${activePort}/api/auth/google/callback`;
+    const identity = await google.exchange({
+      code: req.query.code,
+      state: req.query.state,
+      redirectUri,
+    });
+    const { token } = await auth.loginWithGoogleToken(identity);
+    // Hand the token back to the app window and close this one.
+    res.send(`<!doctype html><meta charset="utf-8"><title>Signed in</title>
+      <body style="font-family:system-ui;background:#0e1117;color:#e6edf3;display:grid;place-items:center;height:100vh;margin:0">
+      <div style="text-align:center">
+        <h2 style="color:#25d366">Signed in as ${escapeHtml(identity.email)}</h2>
+        <p>You can close this window.</p>
+      </div>
+      <script>
+        try { localStorage.setItem('wa_token', ${JSON.stringify(token)}); } catch (e) {}
+        if (window.opener) { try { window.opener.postMessage({ type: 'wa-auth', token: ${JSON.stringify(
+          token
+        )} }, '*'); } catch (e) {} }
+        setTimeout(function () { window.close(); }, 1200);
+      </script></body>`);
+  } catch (err) {
+    res.status(400).send(errorPage(err.message));
+  }
+});
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+  );
+}
+
+function errorPage(message) {
+  return `<!doctype html><meta charset="utf-8"><title>Sign-in failed</title>
+    <body style="font-family:system-ui;background:#0e1117;color:#e6edf3;display:grid;place-items:center;height:100vh;margin:0">
+    <div style="text-align:center;max-width:460px">
+      <h2 style="color:#f4525f">Sign-in failed</h2>
+      <p>${escapeHtml(message)}</p>
+      <p style="color:#8b98a9;font-size:13px">Close this window and try again.</p>
+    </div></body>`;
+}
+
+// ---------------------------------------------------------------- admin
+
+/**
+ * The dashboard. Only the admin account may read across users, and Firestore's own
+ * rules enforce that too - this check is convenience, not the security boundary.
+ */
+function requireAdmin(req, res, next) {
+  if (!isAdminAccount()) {
+    return res.status(403).json({ ok: false, error: 'Admin only.' });
+  }
+  next();
+}
+
+app.get('/api/admin/users', requireAdmin, async (req, res) => {
+  try {
+    const session = auth.currentSession();
+    if (!session) throw new Error('Not signed in.');
+    const users = await firebase.listUsers(session.idToken);
+    const totals = users.reduce(
+      (acc, u) => ({
+        users: acc.users + 1,
+        sent: acc.sent + (u.totalMessagesSent || 0),
+        failed: acc.failed + (u.totalMessagesFailed || 0),
+        campaigns: acc.campaigns + (u.totalCampaigns || 0),
+      }),
+      { users: 0, sent: 0, failed: 0, campaigns: 0 }
+    );
+    ok(res, { users, totals });
+  } catch (err) {
+    fail(res, err);
+  }
+});
+
+app.get('/api/admin/users/:uid/events', requireAdmin, async (req, res) => {
+  try {
+    const session = auth.currentSession();
+    if (!session) throw new Error('Not signed in.');
+    ok(res, { events: await firebase.listEvents(session.idToken, req.params.uid, 100) });
+  } catch (err) {
+    fail(res, err);
+  }
+});
 
 // ---------------------------------------------------------------- settings
 
@@ -80,6 +270,8 @@ app.post('/api/settings', (req, res) => {
       'verifyNumbers',
       'autoOptOut',
       'warningAcknowledged',
+      'googleClientId',
+      'googleClientSecret',
     ];
     const patch = {};
     for (const key of allowed) {
@@ -333,35 +525,59 @@ app.delete('/api/optouts/:number', (req, res) =>
 
 // ---------------------------------------------------------------- boot
 
-server.listen(PORT, async () => {
-  const url = `http://localhost:${PORT}`;
-  console.log('');
-  console.log('  WhatsApp Bulk Sender is running');
-  console.log(`  Open ${url} in your browser`);
-  console.log('  Press Ctrl+C to stop');
-  console.log('');
-  pushLog('Server started.');
+let activePort = Number(process.env.PORT) || 3000;
 
-  const resumed = campaign.snapshot();
-  if (resumed.active && resumed.counts.pending > 0) {
-    pushLog(
-      `Found an unfinished campaign: ${resumed.counts.pending} contact(s) still pending. Open the Campaign tab to resume.`,
-      'warn'
-    );
-  }
+/**
+ * Start listening. Electron calls this and waits for the resolved URL before
+ * pointing its window at the app; `npm start` calls it from bin/serve.js.
+ */
+function startServer({ port = activePort, openBrowser = false } = {}) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', async () => {
+      activePort = server.address().port;
+      const url = `http://localhost:${activePort}`;
+      console.log('');
+      console.log('  WhatsApp Bulk Sender is running');
+      console.log(`  Open ${url} in your browser`);
+      console.log('  Press Ctrl+C to stop');
+      console.log('');
+      pushLog('Server started.');
 
-  if (!process.env.NO_OPEN) {
-    try {
-      const open = (await import('open')).default;
-      await open(url);
-    } catch {
-      /* the user can open it manually */
-    }
-  }
-});
+      const resumed = campaign.snapshot();
+      if (resumed.active && resumed.counts.pending > 0) {
+        pushLog(
+          `Found an unfinished campaign: ${resumed.counts.pending} contact(s) still pending. Open the Send tab to resume.`,
+          'warn'
+        );
+      }
 
-process.on('SIGINT', () => {
+      if (openBrowser) {
+        try {
+          const open = (await import('open')).default;
+          await open(url);
+        } catch {
+          /* the user can open it manually */
+        }
+      }
+      resolve({ url, port: activePort });
+    });
+  });
+}
+
+async function shutdown() {
   campaign.stop();
-  console.log('\nStopping...');
+  try {
+    await wa.destroy();
+  } catch {
+    /* best effort */
+  }
+}
+
+process.on('SIGINT', async () => {
+  console.log('Stopping...');
+  await shutdown();
   process.exit(0);
 });
+
+module.exports = { app, server, startServer, shutdown, getPort: () => activePort };

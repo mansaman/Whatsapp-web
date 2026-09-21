@@ -2,6 +2,7 @@ const EventEmitter = require('events');
 const store = require('./store');
 const wa = require('./whatsapp');
 const { render } = require('./template');
+const telemetry = require('./telemetry');
 
 const TICK = 250; // ms granularity for interruptible waits
 
@@ -120,6 +121,7 @@ class CampaignEngine extends EventEmitter {
     this.pauseRequested = false;
     this.state.status = 'running';
     this.persist();
+    telemetry.record('campaign_started', { pending });
     this.loop();
     return this.snapshot();
   }
@@ -187,6 +189,15 @@ class CampaignEngine extends EventEmitter {
 
       if (this.state.status === 'done') {
         this.archive();
+        const counts = this.snapshot().counts;
+        telemetry.bump('campaigns');
+        telemetry.record('campaign_finished', {
+          total: this.state.items.length,
+          sent: counts.sent,
+          failed: counts.failed,
+          skipped: counts.skipped,
+        });
+        telemetry.syncProfile();
         this.log('Campaign finished.', 'success');
       }
       this.emitProgress();
@@ -244,6 +255,7 @@ class CampaignEngine extends EventEmitter {
         item.error = null;
         item.at = new Date().toISOString();
         store.bumpSentToday(1);
+        telemetry.bump('sent');
         this.log(`Sent to ${item.name || '+' + item.number}`, 'success');
       } catch (err) {
         if (err.code === 'NOT_ON_WHATSAPP') {
@@ -253,6 +265,7 @@ class CampaignEngine extends EventEmitter {
         } else {
           item.status = 'failed';
           item.error = err.message;
+          telemetry.bump('failed');
           this.log(`Failed +${item.number}: ${err.message}`, 'error');
         }
         item.at = new Date().toISOString();

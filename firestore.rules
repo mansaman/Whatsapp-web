@@ -1,0 +1,49 @@
+rules_version = '2';
+
+// Security rules for WhatsApp Bulk Sender.
+//
+// Shape of the data:
+//   users/{uid}                 one document per installed user
+//   users/{uid}/events/{id}     usage events written by that user's app
+//
+// A user may only ever touch their own record. Only the admin may read across users.
+// Nobody may delete anything, and nobody may read another user's data.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // CHANGE THIS to your own email before publishing.
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'tools@akoi.in';
+    }
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // The app writes counts only. Reject anything carrying contact data, so a
+    // future bug on the client cannot quietly start uploading phone numbers.
+    function hasNoPersonalData() {
+      return !request.resource.data.keys().hasAny(
+        ['contacts', 'numbers', 'phone', 'phones', 'message', 'messageBody', 'recipients']
+      );
+    }
+
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create, update: if isOwner(uid) && hasNoPersonalData();
+      allow delete: if false;
+
+      match /events/{eventId} {
+        allow read: if isOwner(uid) || isAdmin();
+        allow create: if isOwner(uid) && hasNoPersonalData();
+        allow update, delete: if false;
+      }
+    }
+
+    // Anything not matched above is denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

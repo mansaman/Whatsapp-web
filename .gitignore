@@ -2,9 +2,14 @@ node_modules/
 sessions/
 uploads/
 data/
+cache/
+dist/
 .wwebjs_cache/
 .wwebjs_auth/
 .env
 *.log
 *.png
+!build/icon.png
+!electron/icon.png
 .kilo/
+_*.js

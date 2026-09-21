@@ -1,16 +1,22 @@
 {
   "name": "whatsapp-bulk-sender",
   "version": "1.0.0",
-  "description": "Local GUI app to send WhatsApp messages to a contact list via your own WhatsApp Web session",
-  "main": "server.js",
+  "description": "Desktop app that sends WhatsApp messages to a contact list through your own WhatsApp Web session",
+  "main": "electron/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js",
-    "postinstall": "puppeteer browsers install chrome"
+    "start": "electron .",
+    "serve": "node bin/serve.js",
+    "dist": "electron-builder --win",
+    "pack": "electron-builder --win --dir",
+    "postinstall": "puppeteer browsers install chrome",
+    "test": "node test/firebase-mode.test.js && node test/engine.test.js"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": {
+    "name": "mansaman",
+    "email": "tools@akoi.in"
+  },
+  "license": "MIT",
   "type": "commonjs",
   "dependencies": {
     "express": "^5.2.1",
@@ -21,5 +27,53 @@
     "socket.io": "^4.8.3",
     "whatsapp-web.js": "^1.34.7",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "electron": "^44.4.3",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "in.akoi.whatsappbulksender",
+    "productName": "WhatsApp Bulk Sender",
+    "copyright": "Copyright © 2026 mansaman",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "public/**/*",
+      "bin/**/*",
+      "server.js",
+      "package.json",
+      "!**/*.map",
+      "firestore.rules"
+    ],
+    "asarUnpack": [
+      "node_modules/whatsapp-web.js/**",
+      "node_modules/puppeteer*/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "WhatsApp-Bulk-Sender-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "WhatsApp Bulk Sender",
+      "uninstallDisplayName": "WhatsApp Bulk Sender"
+    }
   }
 }

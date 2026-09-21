@@ -155,7 +155,8 @@ code {
 .btn.ghost { background: transparent; }
 .btn.small { padding: 4px 10px; font-size: 12px; }
 
-input[type="text"], input[type="number"], select, textarea {
+input[type="text"], input[type="number"], input[type="email"],
+input[type="password"], input[type="search"], select, textarea {
   background: #0f141c; color: var(--text);
   border: 1px solid var(--line); border-radius: 8px;
   padding: 9px 11px; font: inherit; font-size: 13px; width: 100%;
@@ -311,3 +312,48 @@ tbody tr:last-child td { border-bottom: 0; }
   box-shadow: 0 8px 28px rgba(0,0,0,.5); font-size: 13px;
 }
 .toast.bad { border-left-color: var(--danger); }
+
+/* ---------------------------------------------- sign in / sign up */
+
+.auth-screen {
+  position: fixed; inset: 0; z-index: 40;
+  display: grid; place-items: center; padding: 20px;
+  background:
+    radial-gradient(900px 500px at 50% -10%, rgba(37,211,102,.10), transparent 60%),
+    var(--bg);
+  overflow-y: auto;
+}
+.auth-box {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px; padding: 30px; width: 100%; max-width: 400px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.45);
+}
+.auth-brand { display: flex; gap: 12px; align-items: center; margin-bottom: 22px; }
+.brand-mark.big { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 12px; font-size: 20px; }
+.auth-title { font-weight: 600; font-size: 16px; }
+.auth-sub { font-size: 12.5px; color: var(--muted); }
+.auth-box .lbl { margin-top: 12px; }
+.auth-box input { margin-bottom: 2px; }
+.btn.wide { width: 100%; justify-content: center; margin-top: 18px; padding: 10px; }
+.auth-or {
+  display: flex; align-items: center; gap: 12px;
+  color: var(--muted); font-size: 12px; margin: 18px 0 0;
+}
+.auth-or::before, .auth-or::after {
+  content: ''; flex: 1; height: 1px; background: var(--line);
+}
+.btn.google {
+  display: flex; align-items: center; gap: 10px; margin-top: 12px;
+  background: #fff; color: #1f2328; border-color: #fff; font-weight: 500;
+}
+.btn.google:hover:not(:disabled) { background: #eef1f4; }
+.g-mark {
+  width: 20px; height: 20px; border-radius: 50%;
+  background: conic-gradient(#ea4335 0 25%, #fbbc05 0 50%, #34a853 0 75%, #4285f4 0);
+  color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 11px;
+}
+.auth-foot { margin: 18px 0 0; line-height: 1.5; }
+.auth-switch { color: var(--accent); cursor: pointer; text-decoration: underline; }
+
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: #1e2531; }

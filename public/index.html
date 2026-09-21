@@ -9,6 +9,47 @@
 </head>
 <body>
 
+<!-- ------------------------------------------------ sign in / sign up -->
+<div class="auth-screen" id="authScreen" hidden>
+  <div class="auth-box">
+    <div class="auth-brand">
+      <div class="brand-mark big">W</div>
+      <div>
+        <div class="auth-title">WhatsApp Bulk Sender</div>
+        <div class="auth-sub" id="authSub">Create your account</div>
+      </div>
+    </div>
+
+    <div id="authError" class="note bad" hidden></div>
+
+    <form id="authForm" autocomplete="on">
+      <label class="lbl">Email address</label>
+      <input type="email" id="authEmail" placeholder="you@gmail.com" autocomplete="username" required />
+
+      <div id="nameField">
+        <label class="lbl">Your name <span class="muted">(optional)</span></label>
+        <input type="text" id="authName" autocomplete="name" />
+      </div>
+
+      <label class="lbl">Password</label>
+      <input type="password" id="authPassword" placeholder="At least 8 characters"
+             autocomplete="current-password" required />
+
+      <button class="btn primary wide" id="authSubmit" type="submit">Create account</button>
+    </form>
+
+    <div class="auth-or" id="googleWrap" hidden><span>or</span></div>
+    <button class="btn wide google" id="btnGoogle" hidden>
+      <span class="g-mark">G</span> Sign in with Google
+    </button>
+
+    <p class="muted small auth-foot" id="authFoot">
+      Your account is stored only on this computer. There is no server and nothing is
+      uploaded anywhere.
+    </p>
+  </div>
+</div>
+
 <!-- ------------------------------------------------ first-run warning -->
 <div class="modal" id="warningModal" hidden>
   <div class="modal-box">
@@ -27,7 +68,7 @@
   </div>
 </div>
 
-<div class="app">
+<div class="app" id="appShell" hidden>
 
   <!-- ------------------------------------------------ sidebar -->
   <aside class="sidebar">
@@ -46,6 +87,7 @@
       <button class="nav-item" data-tab="send"><span class="ni">4</span> Send</button>
       <button class="nav-item" data-tab="settings"><span class="ni">⚙</span> Settings</button>
       <button class="nav-item" data-tab="history"><span class="ni">↺</span> History</button>
+      <button class="nav-item" data-tab="admin" id="navAdmin" hidden><span class="ni">★</span> Dashboard</button>
     </nav>
 
     <div class="sidebar-foot">
@@ -271,11 +313,74 @@
           </div>
 
           <div class="card">
+            <h3>Account</h3>
+            <dl class="kv">
+              <dt>Signed in</dt><dd id="acctEmail">—</dd>
+              <dt>Sign-in</dt><dd id="acctProvider">—</dd>
+            </dl>
+            <div class="row tight mt">
+              <button class="btn small" id="btnChangePw">Change password</button>
+              <button class="btn small ghost danger" id="btnSignOut">Sign out</button>
+            </div>
+
+            <h3 class="mt">Sign in with Google <span class="chip">optional</span></h3>
+            <p class="muted small">Paste an OAuth client ID from your own Google Cloud
+               project to enable the Google button on the sign-in screen. See README.</p>
+            <label class="lbl">Client ID</label>
+            <input type="text" id="setGoogleId" placeholder="xxxxx.apps.googleusercontent.com" />
+            <label class="lbl">Client secret <span class="muted">(if your client has one)</span></label>
+            <input type="text" id="setGoogleSecret" />
+            <button class="btn mt" id="btnSaveGoogle">Save Google settings</button>
+          </div>
+
+          <div class="card">
             <h3>Opt-out list</h3>
             <p class="muted small">These numbers are never messaged.</p>
             <textarea id="optAdd" rows="3" placeholder="9876543210"></textarea>
             <button class="btn" id="btnAddOpt">Add to opt-out</button>
             <div class="chips" id="optList"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------- Admin dashboard ---------------- -->
+      <section class="tab" id="tab-admin">
+        <div class="card">
+          <div class="row between">
+            <h3 class="nomargin">Everyone using the app</h3>
+            <button class="btn small" id="btnRefreshAdmin">Refresh</button>
+          </div>
+          <div class="stat-row mt">
+            <div class="stat"><b id="adUsers">0</b><span>users</span></div>
+            <div class="stat good"><b id="adSent">0</b><span>messages sent</span></div>
+            <div class="stat bad"><b id="adFailed">0</b><span>failed</span></div>
+            <div class="stat"><b id="adCampaigns">0</b><span>campaigns</span></div>
+          </div>
+          <div class="note" id="adminNote" hidden></div>
+          <div class="table-wrap">
+            <table id="adminTable">
+              <thead><tr>
+                <th>Email</th><th>Name</th><th>Sign-in</th><th>Sent</th>
+                <th>Failed</th><th>Campaigns</th><th>Last seen</th><th>Version</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="muted small mt">Click a row to see that user's recent activity.
+             Contacts, phone numbers and message text are never uploaded, so they are
+             not shown here.</p>
+        </div>
+
+        <div class="card" id="eventsCard" hidden>
+          <div class="row between">
+            <h3 class="nomargin">Activity — <span id="eventsWho" class="chip"></span></h3>
+            <button class="btn small ghost" id="btnCloseEvents">Close</button>
+          </div>
+          <div class="table-wrap">
+            <table id="eventsTable">
+              <thead><tr><th>When</th><th>Event</th><th>Details</th></tr></thead>
+              <tbody></tbody>
+            </table>
           </div>
         </div>
       </section>

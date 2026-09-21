@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const { DATA_DIR } = require('./paths');
 
 const DEFAULTS = {
   'settings.json': {
@@ -15,6 +14,8 @@ const DEFAULTS = {
     verifyNumbers: true,
     autoOptOut: true,
     warningAcknowledged: false,
+    googleClientId: '',
+    googleClientSecret: '',
     sentToday: 0,
     sentTodayDate: null,
   },
@@ -23,6 +24,10 @@ const DEFAULTS = {
   'history.json': [],
   'optout.json': [],
   'message.json': { body: '', mediaPath: null, mediaName: null },
+  'account.json': null,
+  'telemetry.json': [],
+  'totals.json': { sent: 0, failed: 0, campaigns: 0 },
+  'session.json': null,
 };
 
 function file(name) {

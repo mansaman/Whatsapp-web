@@ -1,11 +1,10 @@
-const path = require('path');
 const fs = require('fs');
 const EventEmitter = require('events');
 const QRCode = require('qrcode');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const store = require('./store');
-
-const SESSION_DIR = path.join(__dirname, '..', 'sessions');
+const { SESSION_DIR, CACHE_DIR } = require('./paths');
+const { findChrome } = require('./browser');
 
 /**
  * Thin wrapper around whatsapp-web.js that exposes a simple state machine
@@ -53,10 +52,18 @@ class WhatsAppService extends EventEmitter {
         '--disable-gpu',
       ],
     };
-    if (process.env.CHROME_PATH) puppeteer.executablePath = process.env.CHROME_PATH;
+    const chrome = findChrome();
+    if (!chrome) {
+      this.lastError =
+        'No Chrome or Edge found on this computer. Install Google Chrome, then try again.';
+      this.setState('disconnected', { log: this.lastError });
+      return this.status();
+    }
+    puppeteer.executablePath = chrome;
 
     this.client = new Client({
       authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
+      webVersionCache: { type: 'local', path: CACHE_DIR },
       puppeteer,
     });
 
@@ -128,6 +135,17 @@ class WhatsAppService extends EventEmitter {
       fs.rmSync(SESSION_DIR, { recursive: true, force: true });
       this.setState('disconnected', { log: 'Logged out and session cleared.' });
     }
+  }
+
+  /** Shut the browser down without clearing the saved session. */
+  async destroy() {
+    if (!this.client) return;
+    const client = this.client;
+    this.client = null;
+    this.me = null;
+    this.qrDataUrl = null;
+    this.state = 'disconnected';
+    await client.destroy().catch(() => {});
   }
 
   isReady() {

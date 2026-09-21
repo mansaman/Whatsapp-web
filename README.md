@@ -1,21 +1,30 @@
 # WhatsApp Bulk Sender
 
-A local app that sends WhatsApp messages to a list of contacts through **your own**
+A Windows desktop app that sends WhatsApp messages to a list of contacts through **your own**
 WhatsApp Web session. No API keys, no business verification — you scan a QR code
 exactly like you do for WhatsApp Web.
+
+## Install (for end users)
+
+Download **WhatsApp-Bulk-Sender-Setup-1.0.0.exe** and run it. Nothing else is needed —
+no Node, no npm, no command line. Windows will warn that the app is unsigned: click
+**More info → Run anyway**.
+
+On first launch you create an account with your email, or sign in with Google.
 
 > **Read this first.** Bulk messaging breaks WhatsApp's Terms of Service and your number
 > can be banned. This tool slows sending down and enforces opt-outs to keep that risk
 > low, but it cannot eliminate it. Message people who expect to hear from you.
 
-## Run it
+## Run from source (for development)
 
 ```bash
-npm install     # first time only
-npm start
+npm install      # first time only
+npm start        # desktop app
+npm run serve    # browser-only, at http://localhost:3000
+npm test         # engine + firebase-mode tests
+npm run dist     # build the Windows installer into dist/
 ```
-
-Your browser opens at <http://localhost:3000>.
 
 1. **Connection** — click Connect, scan the QR with WhatsApp → Settings → Linked devices.
 2. **Contacts** — drop a CSV/XLSX (or paste numbers), pick the phone and name columns, Validate.
@@ -77,7 +86,23 @@ $env:CHROME_PATH = "C:\Program Files\Google\Chrome\Application\chrome.exe"; npm 
 **Messages failing after a while.** You are being rate-limited. Stop, wait a day,
 raise the delays and lower the cap.
 
+## Accounts and the dashboard
+
+The app runs in one of two modes, set by `src/config.js`:
+
+- **local** (default, nothing configured) — accounts live on the user's machine, passwords
+  are scrypt-hashed, nothing is uploaded, and there is no dashboard.
+- **firebase** — accounts live in Firebase Auth, Google sign-in works out of the box, and
+  usage counts appear in a Dashboard tab visible only to the admin account.
+
+See [FIREBASE_SETUP.md](FIREBASE_SETUP.md) to switch it on. Even in firebase mode,
+**contacts, phone numbers and message text never leave the user's computer** — only
+counts and account identity are uploaded. Passwords are handled by Google and are never
+stored by, or visible to, the app owner.
+
 ## Docs
 
 - `PRD.md` — what this is and what it must do
 - `PROGRESS.md` — architecture, work graph, decisions, and where to pick up
+- `FIREBASE_SETUP.md` — one-time Firebase setup for accounts + dashboard
+- `firestore.rules` — database permissions (publish these before going live)

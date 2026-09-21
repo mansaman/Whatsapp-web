@@ -3,7 +3,14 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
-const socket = io();
+let token = null;
+try {
+  token = localStorage.getItem('wa_token');
+} catch {
+  /* storage can be blocked; the user just signs in again */
+}
+
+let socket = null;
 let settings = {};
 let contactsMeta = { headers: [], mapping: {}, fileName: null };
 let lastProgress = { active: false };
@@ -11,13 +18,38 @@ let lastProgress = { active: false };
 // ------------------------------------------------------------ helpers
 
 async function api(path, options = {}) {
-  const res = await fetch(`/api${path}`, {
-    headers: options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  const headers = options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`/api${path}`, { ...options, headers });
   const data = await res.json().catch(() => ({ ok: false, error: 'Bad response' }));
+
+  // The session died (app restarted, token expired) - fall back to the sign-in screen.
+  if (res.status === 401 && data.authRequired) {
+    clearToken();
+    showAuth();
+    throw new Error(data.error || 'Not signed in.');
+  }
   if (!data.ok) throw new Error(data.error || 'Request failed');
   return data;
+}
+
+function setToken(value) {
+  token = value;
+  try {
+    localStorage.setItem('wa_token', value);
+  } catch {}
+}
+
+function clearToken() {
+  token = null;
+  try {
+    localStorage.removeItem('wa_token');
+  } catch {}
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
 }
 
 let toastTimer;
@@ -65,12 +97,35 @@ $$('.nav-item').forEach((btn) => {
     $(`#tab-${tab}`).classList.add('active');
     $('#pageTitle').textContent = btn.textContent.trim().replace(/^[0-9⚙↺]\s*/, '');
     if (tab === 'history') loadHistory();
+    if (tab === 'admin') loadAdmin();
   });
 });
 
-// ------------------------------------------------------------ connection
+// ------------------------------------------------------------ live socket
 
-socket.on('wa:status', renderWaStatus);
+function connectSocket() {
+  if (socket) return;
+  socket = io({ auth: { token } });
+
+  socket.on('wa:status', renderWaStatus);
+  socket.on('campaign:progress', renderProgress);
+  socket.on('optouts', renderOptOuts);
+  socket.on('log', addLog);
+  socket.on('logs:bulk', (items) => {
+    $('#logBox').innerHTML = '';
+    items.forEach(addLog);
+  });
+
+  socket.on('connect_error', (err) => {
+    // The only reason the handshake is refused is a dead session.
+    if (/signed in/i.test(err.message)) {
+      clearToken();
+      showAuth();
+    }
+  });
+}
+
+// ------------------------------------------------------------ connection
 
 function renderWaStatus(s) {
   const pill = $('#statusPill');
@@ -81,10 +136,11 @@ function renderWaStatus(s) {
     authenticating: 'Authenticating…',
     ready: 'Connected',
   };
-  pill.className = 'status-pill';
-  if (s.state === 'ready') pill.classList.add('ready');
-  else if (s.state === 'disconnected') pill.classList.add(s.lastError ? 'error' : '');
-  else pill.classList.add('pending');
+  // classList.add('') throws, which used to abort the rest of this function
+  // and leave the whole status panel stale.
+  const tone =
+    s.state === 'ready' ? 'ready' : s.state === 'disconnected' ? (s.lastError ? 'error' : '') : 'pending';
+  pill.className = tone ? `status-pill ${tone}` : 'status-pill';
 
   $('#statusText').textContent = labels[s.state] || s.state;
   $('#accState').textContent = s.state;
@@ -346,8 +402,6 @@ function renderMedia(message) {
 
 // ------------------------------------------------------------ campaign
 
-socket.on('campaign:progress', renderProgress);
-
 function renderProgress(p) {
   lastProgress = p;
   const running = p.active && p.status === 'running';
@@ -436,12 +490,6 @@ $('#btnExport').addEventListener('click', () => window.open('/api/campaign/repor
 
 // ------------------------------------------------------------ logs
 
-socket.on('log', addLog);
-socket.on('logs:bulk', (items) => {
-  $('#logBox').innerHTML = '';
-  items.forEach(addLog);
-});
-
 function addLog(entry) {
   const box = $('#logBox');
   const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
@@ -469,6 +517,8 @@ function renderSettings(s) {
   $('#setCC').value = s.countryCode;
   $('#setVerify').checked = !!s.verifyNumbers;
   $('#setAutoOpt').checked = !!s.autoOptOut;
+  $('#setGoogleId').value = s.googleClientId || '';
+  $('#setGoogleSecret').value = s.googleClientSecret || '';
 
   const pct = Math.min(100, Math.round((s.sentToday / s.dailyCap) * 100));
   $('#capText').textContent = `${s.sentToday} / ${s.dailyCap}`;
@@ -499,8 +549,6 @@ $('#btnSaveSettings').addEventListener('click', async () => {
 });
 
 // ------------------------------------------------------------ opt-outs
-
-socket.on('optouts', renderOptOuts);
 
 function renderOptOuts(list) {
   $('#optList').innerHTML = list.length
@@ -546,19 +594,266 @@ async function loadHistory() {
     : '<tr><td colspan="6" class="muted">No campaigns yet.</td></tr>';
 }
 
+// ------------------------------------------------------------ sign in / sign up
+
+let authMode = 'signup'; // or 'login'
+
+function showAuth() {
+  $('#appShell').hidden = true;
+  $('#authScreen').hidden = false;
+}
+
+function showApp() {
+  $('#authScreen').hidden = true;
+  $('#appShell').hidden = false;
+}
+
+function authError(message) {
+  const el = $('#authError');
+  el.hidden = !message;
+  el.textContent = message || '';
+}
+
+function renderAuthMode(state) {
+  authMode = state.registered ? 'login' : 'signup';
+  const signingUp = authMode === 'signup';
+
+  $('#authSub').textContent = signingUp
+    ? 'Create your account to get started'
+    : `Welcome back${state.account && state.account.name ? ', ' + state.account.name : ''}`;
+  $('#authSubmit').textContent = signingUp ? 'Create account' : 'Sign in';
+  $('#nameField').hidden = !signingUp;
+  $('#authPassword').setAttribute('autocomplete', signingUp ? 'new-password' : 'current-password');
+  $('#authPassword').placeholder = signingUp ? 'At least 8 characters' : 'Your password';
+
+  if (!signingUp && state.account) {
+    $('#authEmail').value = state.account.email;
+  }
+
+  const firebaseMode = state.mode === 'firebase';
+  if (firebaseMode) {
+    $('#authFoot').innerHTML = signingUp
+      ? 'We store your email and how much you use the app. Your contacts and messages stay on this computer and are never uploaded.'
+      : 'Forgotten it? <span class="auth-switch" id="resetLink">Email me a reset link</span>';
+  } else {
+    $('#authFoot').innerHTML = signingUp
+      ? 'Your account is stored only on this computer. There is no server and nothing is uploaded anywhere.'
+      : 'Signed up with a different email? <span class="auth-switch" id="resetHint">Where is my account stored?</span>';
+  }
+
+  const resetLink = $('#resetLink');
+  if (resetLink) {
+    resetLink.addEventListener('click', async () => {
+      const email = $('#authEmail').value.trim();
+      if (!email) return authError('Type your email address first.');
+      try {
+        await api('/auth/reset', { method: 'POST', body: JSON.stringify({ email }) });
+        authError('');
+        toast('Reset link sent — check your inbox.');
+      } catch (err) {
+        authError(err.message);
+      }
+    });
+  }
+
+  const hint = $('#resetHint');
+  if (hint) {
+    hint.addEventListener('click', () =>
+      alert(
+        'Your account lives in account.json inside the app data folder ' +
+          '(File > Open data folder). Deleting that file lets you sign up again, ' +
+          'but it does not touch your WhatsApp session or contacts.'
+      )
+    );
+  }
+
+  const googleOn = !!state.googleEnabled;
+  $('#googleWrap').hidden = !googleOn;
+  $('#btnGoogle').hidden = !googleOn;
+}
+
+$('#authForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  authError('');
+  const btn = $('#authSubmit');
+  btn.disabled = true;
+  try {
+    const payload = {
+      email: $('#authEmail').value.trim(),
+      password: $('#authPassword').value,
+      name: $('#authName').value.trim(),
+    };
+    const path = authMode === 'signup' ? '/auth/signup' : '/auth/login';
+    const { token: newToken } = await api(path, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    setToken(newToken);
+    $('#authPassword').value = '';
+    await enterApp();
+  } catch (err) {
+    authError(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('#btnGoogle').addEventListener('click', () => {
+  // The callback page hands the token back through postMessage.
+  window.open('/api/auth/google/start', 'wa-google', 'width=520,height=640');
+});
+
+window.addEventListener('message', async (event) => {
+  if (event.origin !== window.location.origin) return;
+  if (!event.data || event.data.type !== 'wa-auth' || !event.data.token) return;
+  setToken(event.data.token);
+  await enterApp();
+});
+
+// ------------------------------------------------------------ account settings
+
+$('#btnSignOut').addEventListener('click', async () => {
+  if (!confirm('Sign out of the app? Your WhatsApp link and data stay on this computer.')) return;
+  try {
+    await api('/auth/logout', { method: 'POST' });
+  } catch {
+    /* signing out locally is what matters */
+  }
+  clearToken();
+  location.reload();
+});
+
+$('#btnChangePw').addEventListener('click', async () => {
+  const currentPassword = prompt('Current password:');
+  if (currentPassword === null) return;
+  const newPassword = prompt('New password (at least 8 characters):');
+  if (newPassword === null) return;
+  try {
+    await api('/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    toast('Password changed.');
+  } catch (e) {
+    toast(e.message, true);
+  }
+});
+
+$('#btnSaveGoogle').addEventListener('click', async () => {
+  try {
+    const { settings: fresh } = await api('/settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        googleClientId: $('#setGoogleId').value.trim(),
+        googleClientSecret: $('#setGoogleSecret').value.trim(),
+      }),
+    });
+    settings = fresh;
+    toast('Google settings saved. They apply at the next sign-in.');
+  } catch (e) {
+    toast(e.message, true);
+  }
+});
+
+function renderAccount(account, mode) {
+  if (!account) return;
+  if (mode === 'firebase') $('#btnChangePw').hidden = true;
+  $('#acctEmail').textContent = account.email;
+  $('#acctProvider').textContent = account.provider === 'google' ? 'Google' : 'Email + password';
+  $('#btnChangePw').hidden = false;
+}
+
+// ------------------------------------------------------------ admin dashboard
+
+async function loadAdmin() {
+  const note = $('#adminNote');
+  try {
+    const { users, totals } = await api('/admin/users');
+    $('#adUsers').textContent = totals.users;
+    $('#adSent').textContent = totals.sent;
+    $('#adFailed').textContent = totals.failed;
+    $('#adCampaigns').textContent = totals.campaigns;
+    note.hidden = true;
+
+    const tbody = $('#adminTable').querySelector('tbody');
+    if (!users.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="muted">Nobody has signed in yet.</td></tr>';
+      return;
+    }
+
+    users.sort((a, b) => String(b.lastSeenAt || '').localeCompare(String(a.lastSeenAt || '')));
+    tbody.innerHTML = users
+      .map(
+        (u) => `<tr data-uid="${esc(u.uid)}" data-email="${esc(u.email)}" class="clickable">
+          <td>${esc(u.email)}</td>
+          <td>${esc(u.name || '—')}</td>
+          <td>${esc(u.provider === 'google' ? 'Google' : 'Email')}</td>
+          <td>${u.totalMessagesSent || 0}</td>
+          <td>${u.totalMessagesFailed || 0}</td>
+          <td>${u.totalCampaigns || 0}</td>
+          <td>${u.lastSeenAt ? new Date(u.lastSeenAt).toLocaleString() : '—'}</td>
+          <td>${esc(u.appVersion || '—')}</td>
+        </tr>`
+      )
+      .join('');
+
+    $('#adminTable tbody tr.clickable').forEach((row) =>
+      row.addEventListener('click', () => loadEvents(row.dataset.uid, row.dataset.email))
+    );
+  } catch (e) {
+    note.hidden = false;
+    note.className = 'note bad';
+    note.textContent = e.message;
+  }
+}
+
+async function loadEvents(uid, email) {
+  try {
+    const { events } = await api(`/admin/users/${encodeURIComponent(uid)}/events`);
+    $('#eventsCard').hidden = false;
+    $('#eventsWho').textContent = email;
+    const tbody = $('#eventsTable').querySelector('tbody');
+    tbody.innerHTML = events.length
+      ? events
+          .map((ev) => {
+            const { type, at, ...rest } = ev;
+            const details = Object.entries(rest)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join(', ');
+            return `<tr><td>${at ? new Date(at).toLocaleString() : '—'}</td>
+                    <td>${esc(type)}</td><td>${esc(details || '—')}</td></tr>`;
+          })
+          .join('')
+      : '<tr><td colspan="3" class="muted">No activity recorded yet.</td></tr>';
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+$('#btnRefreshAdmin').addEventListener('click', loadAdmin);
+$('#btnCloseEvents').addEventListener('click', () => ($('#eventsCard').hidden = true));
+
 // ------------------------------------------------------------ boot
 
-(async function init() {
+/** Everything that needs a signed-in session. */
+async function enterApp() {
+  showApp();
+  connectSocket();
+
   const { settings: s } = await api('/settings');
   renderSettings(s);
   initWarning();
+
+  const state = await api('/auth/state');
+  renderAccount(state.account, state.mode);
+  $('#navAdmin').hidden = !state.isAdmin;
 
   const { message } = await api('/message');
   msgBody.value = message.body || '';
   renderMedia(message);
 
   const { contacts } = await api('/contacts');
-  if (contacts.rows?.length) {
+  if (contacts.rows && contacts.rows.length) {
     contactsMeta = contacts;
     renderMapping(contacts.rows.length);
   }
@@ -567,7 +862,8 @@ async function loadHistory() {
   refreshPreview();
 
   // keep the daily-cap meter honest while a run is going
-  setInterval(async () => {
+  clearInterval(capTimer);
+  capTimer = setInterval(async () => {
     try {
       const { settings: fresh } = await api('/settings');
       settings = fresh;
@@ -576,4 +872,36 @@ async function loadHistory() {
       $('#capBar').style.width = `${pct}%`;
     } catch {}
   }, 15000);
+}
+
+let capTimer = null;
+
+(async function init() {
+  const state = await api('/auth/state');
+  renderAuthMode(state);
+
+  // An app token from this browser session.
+  if (token) {
+    try {
+      await enterApp();
+      return;
+    } catch {
+      clearToken();
+    }
+  }
+
+  // No token, but the device remembers a signed-in account: get back in silently.
+  if (state.mode === 'firebase' && state.registered) {
+    try {
+      const { token: restored } = await api('/auth/restore', { method: 'POST' });
+      setToken(restored);
+      await enterApp();
+      return;
+    } catch {
+      /* expired, or offline past the grace window - fall through to the form */
+    }
+  }
+
+  showAuth();
+  $('#authEmail').focus();
 })();
