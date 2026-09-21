@@ -33,6 +33,9 @@ if (!app.requestSingleInstanceLock()) {
 }
 logStartup('single-instance lock acquired');
 
+/** Must match the redirect URIs registered in the Google OAuth client. */
+const PREFERRED_PORTS = [3000, 3001, 3002, 3003];
+
 let mainWindow = null;
 let server = null;
 let appUrl = null;
@@ -132,14 +135,23 @@ app.whenReady().then(async () => {
     logStartup('window created; loading server module');
     server = require('../server');
     logStartup('server module loaded');
-    // A stable port keeps the Google redirect URI predictable; fall back to any
-    // free port if something else already holds it.
-    let started;
-    try {
-      started = await server.startServer({ port: 3000 });
-    } catch (err) {
-      if (err.code !== 'EADDRINUSE') throw err;
+    // Google matches redirect URIs exactly, with no wildcard for the port, so the
+    // app may only listen on a port that is registered in the OAuth client. Try them
+    // in order and fall back to a random port only as a last resort - Google sign-in
+    // will not work on that port, but the rest of the app still will.
+    let started = null;
+    for (const port of PREFERRED_PORTS) {
+      try {
+        started = await server.startServer({ port });
+        break;
+      } catch (err) {
+        if (err.code !== 'EADDRINUSE') throw err;
+        logStartup(`port ${port} busy`);
+      }
+    }
+    if (!started) {
       started = await server.startServer({ port: 0 });
+      logStartup('all preferred ports busy; Google sign-in will be unavailable');
     }
     appUrl = started.url;
     logStartup('server listening at ' + appUrl);

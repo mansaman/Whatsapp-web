@@ -4,7 +4,7 @@ You need a Firebase project so users can register, sign in with Google, and so y
 dashboard of who is using the app. It is free: the Spark plan covers unlimited email/Google
 sign-ins and about 20,000 database writes a day, which is far more than this app produces.
 
-Takes about 10 minutes. At the end you paste 4 values into `src/config.js`.
+Takes about 10 minutes. At the end you paste 5 values into `src/config.js`.
 
 ---
 
@@ -48,21 +48,32 @@ Firebase already made one for you when you enabled Google sign-in.
 1. Still in **Project settings**, go to the **General** tab and note your project.
 2. Open <https://console.cloud.google.com/apis/credentials> and pick the same project.
 3. Under **OAuth 2.0 Client IDs** you will see one named **Web client (auto created by Google Service)**.
-4. Click it and copy the **Client ID** (ends in `.apps.googleusercontent.com`).
+4. Click it and copy **both** the **Client ID** (ends in `.apps.googleusercontent.com`)
+   and the **Client secret**.
+
+   > You need the secret here because this is a *Web application* client, and Google
+   > requires it on the token exchange for that client type. Firebase only trusts ID
+   > tokens issued to its own auto-created client, which is why we reuse it rather than
+   > making a separate Desktop client. PKCE still protects the exchange.
 5. **Important:** in that same screen, under **Authorised redirect URIs**, click **Add URI** and add:
    ```
    http://localhost:3000/api/auth/google/callback
    ```
-   Then add a few fallbacks in case port 3000 is busy on a user's machine:
+   Then add these three fallbacks, used when port 3000 is already busy on a user's
+   machine. The app tries 3000, 3001, 3002, 3003 in that order, and Google matches
+   redirect URIs exactly — a port that is not registered here cannot sign in.
    ```
    http://localhost:3001/api/auth/google/callback
    http://localhost:3002/api/auth/google/callback
    http://localhost:3003/api/auth/google/callback
    ```
-   Click **Save**.
+   Click **Save**. Changes can take a few minutes to take effect.
 
-> Desktop apps cannot keep a client secret private, so this flow uses PKCE instead.
-> The client ID is not sensitive — it ships inside every copy of the app by design.
+> **On shipping the secret.** It goes inside the app, so treat it as public: anyone can
+> extract it from the installer. That is normal for installed apps and Google accounts for
+> it — PKCE is what actually secures the exchange, and this client can only ever redirect
+> to `localhost`, so a copied secret buys an attacker nothing. Do not reuse this client
+> for anything server-side.
 
 ## 6. Lock down the database
 
@@ -91,6 +102,7 @@ firebase: {
   authDomain: 'your-project.firebaseapp.com',
   projectId: 'your-project',
   googleClientId: '....apps.googleusercontent.com',
+  googleClientSecret: 'GOCSPX-...',
 },
 adminEmail: 'tools@akoi.in',
 ```

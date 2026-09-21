@@ -23,7 +23,7 @@ function credentials() {
   const s = store.getSettings();
   return {
     clientId: s.googleClientId || config.firebase.googleClientId || '',
-    clientSecret: s.googleClientSecret || '',
+    clientSecret: s.googleClientSecret || config.firebase.googleClientSecret || '',
   };
 }
 

@@ -18,6 +18,7 @@ const config = {
     authDomain: process.env.WA_FIREBASE_AUTH_DOMAIN || '',
     projectId: process.env.WA_FIREBASE_PROJECT_ID || '',
     googleClientId: process.env.WA_GOOGLE_CLIENT_ID || '',
+    googleClientSecret: process.env.WA_GOOGLE_CLIENT_SECRET || '',
   },
 
   /** Who may read everyone's data in the dashboard. Must match firestore.rules. */
