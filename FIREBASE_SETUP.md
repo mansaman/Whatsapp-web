@@ -6,6 +6,9 @@ sign-ins and about 20,000 database writes a day, which is far more than this app
 
 Takes about 10 minutes. At the end you paste 5 values into `src/config.js`.
 
+Stay on the **Spark** plan (No cost, $0/month), shown at the bottom of the sidebar.
+Nothing in this app needs a paid plan.
+
 ---
 
 ## 1. Create the project
@@ -13,11 +16,18 @@ Takes about 10 minutes. At the end you paste 5 values into `src/config.js`.
 1. Go to <https://console.firebase.google.com> and click **Add project**.
 2. Name it `whatsapp-bulk-sender` (any name works).
 3. Google Analytics: **turn it off**. You do not need it and it adds a consent burden.
+   (Harmless if you already left it on — just ignore the Analytics screens.)
 4. Click **Create project**.
+
+> **Console navigation.** Firebase redesigned the console and removed the old **Build**
+> menu. The left sidebar now has *Project shortcuts* (Authentication, Analytics) and
+> *Product categories* (Databases and storage, Security, Hosting and serverless, ...).
+> Older guides that say "Build → X" mean the same screens.
 
 ## 2. Turn on the sign-in methods
 
-In the left sidebar: **Build → Authentication → Get started**.
+Click **Authentication** in the left sidebar (under *Project shortcuts*), then
+**Get started**.
 
 Under the **Sign-in method** tab, enable two providers:
 
@@ -26,14 +36,14 @@ Under the **Sign-in method** tab, enable two providers:
 
 ## 3. Create the database
 
-**Build → Firestore Database → Create database**.
+Left sidebar → **Databases and storage** → **Firestore Database** → **Create database**.
 
 1. Choose a location close to your users (`asia-south1` for India).
 2. Start in **production mode** (we replace the rules in step 6 anyway).
 
 ## 4. Get your app config
 
-1. Click the **gear icon → Project settings**.
+1. Left sidebar → **Settings** → **Project settings**.
 2. Scroll to **Your apps** and click the **web** icon (`</>`).
 3. Nickname it `desktop-app`, do **not** tick Firebase Hosting, click **Register app**.
 4. You get a `firebaseConfig` block. You need three values from it:
@@ -45,7 +55,7 @@ Under the **Sign-in method** tab, enable two providers:
 
 Firebase already made one for you when you enabled Google sign-in.
 
-1. Still in **Project settings**, go to the **General** tab and note your project.
+1. Note your project ID from **Project settings** (for this project: `whatsapp-api-c70c6`).
 2. Open <https://console.cloud.google.com/apis/credentials> and pick the same project.
 3. Under **OAuth 2.0 Client IDs** you will see one named **Web client (auto created by Google Service)**.
 4. Click it and copy **both** the **Client ID** (ends in `.apps.googleusercontent.com`)
@@ -77,7 +87,7 @@ Firebase already made one for you when you enabled Google sign-in.
 
 ## 6. Lock down the database
 
-**Firestore Database → Rules**, replace everything with the contents of
+**Databases and storage → Firestore Database → Rules tab**, replace everything with the contents of
 [`firestore.rules`](firestore.rules) in this repo, then **Publish**.
 
 Those rules say: a signed-in user may write only their own record, and only *you*
