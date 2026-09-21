@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>WhatsApp Bulk Sender</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>" />
+</head>
+<body>
+
+<!-- ------------------------------------------------ first-run warning -->
+<div class="modal" id="warningModal" hidden>
+  <div class="modal-box">
+    <h2>Before you start</h2>
+    <p>This app automates <strong>your own</strong> WhatsApp Web session. Bulk messaging is
+       against WhatsApp's Terms of Service and <strong>your number can be banned</strong>,
+       temporarily or permanently.</p>
+    <ul>
+      <li>Only message people who expect to hear from you.</li>
+      <li>Keep the default delays. Faster is not better — it is a ban.</li>
+      <li>Start with 20–30 messages a day on a new number and build up slowly.</li>
+      <li>Honour opt-outs. The app records "STOP" replies automatically.</li>
+    </ul>
+    <label class="check"><input type="checkbox" id="warnAck" /> I understand the risk and take responsibility.</label>
+    <button class="btn primary" id="warnContinue" disabled>Continue</button>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- ------------------------------------------------ sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">W</div>
+      <div>
+        <div class="brand-name">Bulk Sender</div>
+        <div class="brand-sub">WhatsApp Web</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active" data-tab="connection"><span class="ni">1</span> Connection</button>
+      <button class="nav-item" data-tab="contacts"><span class="ni">2</span> Contacts</button>
+      <button class="nav-item" data-tab="message"><span class="ni">3</span> Message</button>
+      <button class="nav-item" data-tab="send"><span class="ni">4</span> Send</button>
+      <button class="nav-item" data-tab="settings"><span class="ni">⚙</span> Settings</button>
+      <button class="nav-item" data-tab="history"><span class="ni">↺</span> History</button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="cap-meter">
+        <div class="cap-head"><span>Today</span><span id="capText">0 / 200</span></div>
+        <div class="bar"><div class="bar-fill" id="capBar" style="width:0%"></div></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ------------------------------------------------ main -->
+  <main class="main">
+    <header class="topbar">
+      <h1 id="pageTitle">Connection</h1>
+      <div class="status-pill" id="statusPill">
+        <span class="dot"></span><span id="statusText">Disconnected</span>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- ---------------- Connection ---------------- -->
+      <section class="tab active" id="tab-connection">
+        <div class="grid two">
+          <div class="card">
+            <h3>Link your WhatsApp</h3>
+            <p class="muted">Open WhatsApp on your phone → <b>Settings → Linked devices → Link a device</b>,
+               then scan the code below. The session is remembered, so you only do this once.</p>
+            <div class="qr-area" id="qrArea">
+              <div class="qr-placeholder" id="qrPlaceholder">Not connected</div>
+              <img id="qrImage" alt="QR code" hidden />
+            </div>
+            <div class="row">
+              <button class="btn primary" id="btnConnect">Connect</button>
+              <button class="btn danger ghost" id="btnLogout">Log out</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Account</h3>
+            <dl class="kv">
+              <dt>State</dt><dd id="accState">disconnected</dd>
+              <dt>Name</dt><dd id="accName">—</dd>
+              <dt>Number</dt><dd id="accNumber">—</dd>
+            </dl>
+            <div class="note" id="accError" hidden></div>
+            <h3 class="mt">How it works</h3>
+            <ol class="steps">
+              <li>Connect this app to your WhatsApp account.</li>
+              <li>Upload your contact list and map the columns.</li>
+              <li>Write the message, using <code>{{name}}</code> for personalisation.</li>
+              <li>Start the run and watch it go.</li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------- Contacts ---------------- -->
+      <section class="tab" id="tab-contacts">
+        <div class="card">
+          <h3>Load your list</h3>
+          <div class="grid two">
+            <div>
+              <label class="drop" id="dropZone">
+                <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.txt" hidden />
+                <div class="drop-inner">
+                  <div class="drop-icon">⬆</div>
+                  <div><b>Drop a CSV or Excel file</b><br /><span class="muted">or click to browse</span></div>
+                </div>
+              </label>
+              <p class="muted small">First row must be the header. Example:
+                 <code>name,phone,city</code></p>
+            </div>
+            <div>
+              <label class="lbl">…or paste numbers, one per line</label>
+              <textarea id="pasteBox" rows="6" placeholder="9876543210, Aman&#10;9123456789, Priya"></textarea>
+              <button class="btn" id="btnPaste">Use pasted list</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="mapCard" hidden>
+          <h3>Map columns <span class="chip" id="fileChip"></span></h3>
+          <div class="row wrap">
+            <div class="field">
+              <label class="lbl">Phone number column *</label>
+              <select id="mapNumber"></select>
+            </div>
+            <div class="field">
+              <label class="lbl">Name column</label>
+              <select id="mapName"></select>
+            </div>
+            <div class="field">
+              <label class="lbl">Default country code</label>
+              <input type="text" id="mapCC" size="5" />
+            </div>
+            <div class="field end">
+              <button class="btn primary" id="btnValidate">Validate list</button>
+            </div>
+          </div>
+
+          <div id="statsRow" class="stat-row" hidden>
+            <div class="stat"><b id="stTotal">0</b><span>rows</span></div>
+            <div class="stat good"><b id="stValid">0</b><span>valid</span></div>
+            <div class="stat warn"><b id="stDup">0</b><span>duplicates</span></div>
+            <div class="stat bad"><b id="stInvalid">0</b><span>invalid</span></div>
+            <div class="stat"><b id="stOpt">0</b><span>opted out</span></div>
+          </div>
+
+          <div id="varsHint" class="note" hidden></div>
+          <div class="table-wrap" id="previewWrap" hidden>
+            <table id="previewTable"><thead></thead><tbody></tbody></table>
+          </div>
+          <div id="invalidWrap" class="note bad" hidden></div>
+        </div>
+      </section>
+
+      <!-- ---------------- Message ---------------- -->
+      <section class="tab" id="tab-message">
+        <div class="grid two">
+          <div class="card">
+            <h3>Compose</h3>
+            <textarea id="msgBody" rows="12" placeholder="Hi {{name}}, ..."></textarea>
+            <div class="row wrap tight">
+              <button class="btn small" data-insert="{{name}}">+ {{name}}</button>
+              <button class="btn small" data-insert="{Hi|Hello|Hey}">+ spintax</button>
+              <span class="muted small" id="varList"></span>
+            </div>
+
+            <h3 class="mt">Attachment (optional)</h3>
+            <div class="row">
+              <input type="file" id="mediaInput" />
+              <button class="btn" id="btnMediaUpload">Attach</button>
+              <button class="btn ghost danger" id="btnMediaClear" hidden>Remove</button>
+            </div>
+            <div class="muted small" id="mediaName">No attachment.</div>
+          </div>
+
+          <div class="card">
+            <h3>Preview</h3>
+            <p class="muted small">Rendered against your first contact. Spintax picks a fresh
+               variant for every single message.</p>
+            <div class="phone">
+              <div class="bubble" id="previewBubble">Your message will appear here.</div>
+            </div>
+            <div class="note mt">
+              <b>{{variable}}</b> pulls from your columns — any column becomes a variable
+              (<code>Full Name</code> → <code>{{full_name}}</code>).<br />
+              <b>{a|b|c}</b> picks one at random per message. Varying your text is the single
+              most effective way to avoid being flagged as spam.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------- Send ---------------- -->
+      <section class="tab" id="tab-send">
+        <div class="card">
+          <div class="row between">
+            <h3 class="nomargin">Campaign</h3>
+            <div class="row tight">
+              <button class="btn" id="btnBuild">Build queue</button>
+              <button class="btn primary" id="btnStart">Start</button>
+              <button class="btn" id="btnPause">Pause</button>
+              <button class="btn danger" id="btnStop">Stop</button>
+              <button class="btn ghost" id="btnExport">Export CSV</button>
+              <button class="btn ghost danger" id="btnClear">Clear</button>
+            </div>
+          </div>
+
+          <div class="progress-head">
+            <span id="progLabel">No campaign queued.</span>
+            <span id="progPct">0%</span>
+          </div>
+          <div class="bar big"><div class="bar-fill" id="progBar" style="width:0%"></div></div>
+
+          <div class="stat-row mt">
+            <div class="stat good"><b id="cSent">0</b><span>sent</span></div>
+            <div class="stat bad"><b id="cFailed">0</b><span>failed</span></div>
+            <div class="stat warn"><b id="cSkipped">0</b><span>skipped</span></div>
+            <div class="stat"><b id="cPending">0</b><span>pending</span></div>
+            <div class="stat"><b id="cEta">—</b><span>eta</span></div>
+          </div>
+
+          <div class="current" id="currentBox" hidden>
+            <div class="spinner"></div>
+            <div>
+              <div id="currentWho">—</div>
+              <div class="muted small" id="currentWait"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row between">
+            <h3 class="nomargin">Live log</h3>
+            <button class="btn small ghost" id="btnClearLog">Clear</button>
+          </div>
+          <div class="log" id="logBox"></div>
+        </div>
+      </section>
+
+      <!-- ---------------- Settings ---------------- -->
+      <section class="tab" id="tab-settings">
+        <div class="grid two">
+          <div class="card">
+            <h3>Sending pace</h3>
+            <p class="muted small">These defaults are deliberately slow. Speeding them up is the
+               fastest way to lose the number.</p>
+            <div class="field-grid">
+              <label class="lbl">Min delay (sec)</label><input type="number" id="setMin" min="3" />
+              <label class="lbl">Max delay (sec)</label><input type="number" id="setMax" min="4" />
+              <label class="lbl">Long rest every N msgs</label><input type="number" id="setRestEvery" min="0" />
+              <label class="lbl">Rest min (sec)</label><input type="number" id="setRestMin" min="0" />
+              <label class="lbl">Rest max (sec)</label><input type="number" id="setRestMax" min="0" />
+              <label class="lbl">Daily cap</label><input type="number" id="setCap" min="1" />
+              <label class="lbl">Default country code</label><input type="text" id="setCC" />
+            </div>
+            <label class="check"><input type="checkbox" id="setVerify" /> Check each number is on WhatsApp before sending</label>
+            <label class="check"><input type="checkbox" id="setAutoOpt" /> Auto opt-out on "STOP" replies</label>
+            <button class="btn primary mt" id="btnSaveSettings">Save settings</button>
+            <span class="muted small" id="settingsSaved"></span>
+          </div>
+
+          <div class="card">
+            <h3>Opt-out list</h3>
+            <p class="muted small">These numbers are never messaged.</p>
+            <textarea id="optAdd" rows="3" placeholder="9876543210"></textarea>
+            <button class="btn" id="btnAddOpt">Add to opt-out</button>
+            <div class="chips" id="optList"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------- History ---------------- -->
+      <section class="tab" id="tab-history">
+        <div class="card">
+          <h3>Past campaigns</h3>
+          <div class="table-wrap">
+            <table id="historyTable">
+              <thead><tr><th>Finished</th><th>Total</th><th>Sent</th><th>Failed</th><th>Skipped</th><th>Message</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
